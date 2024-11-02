@@ -1,39 +1,49 @@
 require "socket"
-
 class YourRedisServer
   def initialize(port)
     @port = port
   end
-
-  def start
-    puts("Logs from your program will appear here!")
-
-    server = TCPServer.new(@port)
-    client = server.accept
-
-    while (data = client.gets&.chomp) do
-      if data.start_with?('*')
-        command = parse_command(data)
-        if command == 'PING'
-          client.puts("+PONG\r\n")
-        else
-          client.puts("-ERR unknown command\r\n")
-        end
+  def resp_encoder(message)
+    "#{message}\r\n"
+  end
+  def resp_decode(raw_command)
+    parts = raw_command.split("\r\n")
+    parts[2]
+  end
+  def read_resp_array(client)
+    array_length = client.gets[1..-3].to_i
+    array = [];
+    array_length.times do
+      length_prefix = client.gets
+      length = length_prefix[1..-3].to_i
+      value = client.gets.strip[0...length]
+      array << value
+    end
+    array
+  end
+  def handle_client(client)
+    loop do
+      command_array = read_resp_array(client)
+      break if command_array.empty?
+      command = command_array.first.upcase
+      case command
+      when "PING"
+        client.puts(resp_encoder("+PONG"))
       else
-        client.puts("-ERR invalid format\r\n")
+        client.puts(resp_encoder("-ERR unknown command '#{command}'"))
       end
     end
+    client.close
   end
-
-  private
-
-  def parse_command(data)
-    if data == "*1\r\n$4\r\nPING\r\n"
-      return 'PING'
+  def start
+    # You can use print statements as follows for debugging, they'll be visible when running tests.
+    puts("Logs from your program will appear here!")
+    # Uncomment this block to pass the first stage
+    server = TCPServer.new(@port)
+    loop do
+      client = server.accept
+      handle_client(client)
     end
-
-    nil
   end
 end
-
 YourRedisServer.new(6379).start
